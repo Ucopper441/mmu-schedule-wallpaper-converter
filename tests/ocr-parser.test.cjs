@@ -182,3 +182,41 @@ assert.equal(context.parseClassList(classList.replaceAll('08:00 to 10:00', '18:0
 assert.equal(context.parseClassList(block).length, 0, 'Keep grid OCR on its existing parser');
 assert.equal(context.isClassList('Monday Tuesday Wednesday Lecture 09:00-11:00'), false);
 console.log('PASS: grid OCR, By Class sessions, cropped headings, subject grouping, component types, wrapped labels/times, multiple weekdays, invalid times, and image preprocessing.');
+
+// Daily agenda from the user's screenshot: no end times are visible.
+const dailyAgenda = `Tuesday November 10
+8:00AM C SN6224 Lecture Room: CNMX1003-CLC Lecture Theatre 3
+4:00PM C SN6214 Lecture Room: CNMX1002-CLC Lecture Theatre 2
+Wednesday November 11
+12:00PM C CP6224 Lecture Room: CNMX1003-CLC Lecture Theatre 3
+4:00PM C SN6224 Tutorial Room: CQAR2006-FCI CISCO IP C.I. C1
+Thursday November 12
+10:00AM C SN6214 Tutorial Room: CQAR1003-FCI IBM Sft. Inno. Lb
+2:00PM C SE6214 Lecture Room: CQAR1009-FCI Tutorial room
+Friday November 13
+8:00AM C SE6214 Tutorial Room: CQAR3003-FCI Project Lab 2
+5:00PM C CP6224 Tutorial Room: CQAR3006-FCI Microsoft SE Lab`;
+parsed=context.parseDayList(dailyAgenda);
+assert.equal(parsed.length,8);
+assert.deepEqual(Array.from(parsed,c=>c.day),[1,1,2,2,3,3,4,4]);
+assert.deepEqual(Array.from(parsed,c=>c.start),['08:00','16:00','12:00','16:00','10:00','14:00','08:00','17:00']);
+assert.deepEqual(Array.from(parsed,c=>c.code),['CSN6224','CSN6214','CCP6224','CSN6224','CSN6214','CSE6214','CSE6214','CCP6224']);
+assert(parsed.every(c=>c.end===''&&c.needsEndTime&&c.name===''));
+assert.equal(parsed[5].type,'Lecture','Room descriptions must not change the session type');
+assert.equal(parsed[7].venue,'CQAR3006');
+parsed=context.parseDayList('Tuesday November 10\n8:00 AM\nC SN6224 Lecture\nRoom: CNMX1003-CLC\n4:00PM\nC SN6214 Lecture\nRoom: CNMX1002');
+assert.equal(parsed.length,2,'Read wrapped sparse OCR rows');
+assert.equal(parsed[1].venue,'CNMX1002');
+parsed=context.parseDayList('Monday\n09:00-11:00 TCP1101 Programming Lecture Room: Online');
+assert.equal(parsed[0].end,'11:00');
+assert.equal(parsed[0].needsEndTime,false);
+assert.equal(context.parseDayList('Tuesday November 10\n12:99PM C SN6224 Lecture').length,0);
+assert.equal(context.parseDayList('Tuesday November 10\n4:00PM-2:00PM C SN6224 Lecture').length,0);
+assert.equal(context.parseDayList('8:00AM C SN6224 Lecture').length,0,'Never invent a weekday');
+assert.equal(context.parseDayList('Tuesday November 10\n8:00AM Room: CNMX1003').length,0,'Rooms are not subjects');
+const agendaWords={words:[word('Tuesday',100,10),word('November',200,10),word('10',270,10),word('8:00AM',70,50),word('C',300,46),word('SN6224',360,46),word('Lecture',440,46),word('Room:',560,50),word('CNMX1003',680,50)]};
+parsed=context.parseDayList(context.spatialDayListText(agendaWords));
+assert.equal(parsed.length,1,'Rejoin offset columns by visual row for sparse OCR');
+assert.equal(parsed[0].venue,'CNMX1003');
+assert.equal(context.parseDayList(classList).length,0,'By Class imports retain their own reader');
+console.log('PASS: daily agenda rows, all eight supplied classes, wrapped/spatial OCR, missing end times, explicit durations, and invalid rows.');
