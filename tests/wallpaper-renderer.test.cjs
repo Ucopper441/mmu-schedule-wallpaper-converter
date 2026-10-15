@@ -22,9 +22,9 @@ const classes = [
   { code: 'CCP6124', name: '', type: 'Lecture', day: 3, start: '17:00', end: '18:00', venue: 'CQAR1009', color: '#bfcffa' }
 ];
 function canvasRecorder() {
-  const text = [], stack = [];
+  const text = [], stack = [], translations = [];
   const ctx = {
-    scale() {}, translate() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, closePath() {}, fill() {}, stroke() {}, clip() {},
+    scale() {}, translate(x, y) { translations.push([x, y]); }, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, closePath() {}, fill() {}, stroke() {}, clip() {},
     drawImage() {}, putImageData() {},
     getImageData(x, y, width, height) { return { data: new Uint8ClampedArray(width * height * 4).fill(220) }; },
     createRadialGradient() { return { addColorStop() {} }; },
@@ -34,7 +34,7 @@ function canvasRecorder() {
     measureText(value) { return { width: String(value).length * parseFloat(this.font.split(' ')[1]) * .56 }; },
     fillText(value, x, y) { text.push({ value, x, y, font: this.font, color: this.fillStyle }); }
   };
-  return { getContext: () => ctx, text };
+  return { getContext: () => ctx, text, translations };
 }
 assert.equal(context.exportDimensions({ width: 430, height: 932, scale: 3 }, 2).width, 2580);
 assert.equal(context.exportDimensions({ width: 430, height: 932, scale: 3 }, 2).height, 5592);
@@ -52,12 +52,10 @@ for (const [w, h, scale] of presets) for (const rotated of [false, true]) for (c
     context.renderWallpaper(canvas, state, output);
     assert.equal(canvas.width, output.width);
     assert.equal(canvas.height, output.height);
-    assert(canvas.text.some(t => t.value === 'Lecture'), 'Keep class details when there is room');
-    const shortCode = canvas.text.find(t => t.value === 'CCP6124');
-    const longCode = canvas.text.find(t => t.value === 'LMPU3272');
-    assert(shortCode && longCode, 'Keep full course codes in one-hour and longer classes');
-    assert.equal(shortCode.font, longCode.font, 'One-hour classes use the same readable code size as longer classes');
-    assert.equal(canvas.text.filter(t => t.value === 'Tutorial').length, 1);
+    assert(!canvas.text.some(t => ['Lecture', 'Tutorial', 'CSN6224'].includes(t.value)), 'Boxes omit class types and codes when a subject name is available');
+    const titleFonts = canvas.text.filter(t => t.color === '#172d24' && t.font.startsWith('700 ')).map(t => t.font);
+    assert(titleFonts.length >= 3, 'Each class has a subject name or code fallback');
+    assert.equal(new Set(titleFonts).size, 1, 'One-hour and longer classes use the same readable subject font');
     assert(canvas.text.every(t => t.y >= 0 && t.y < size.height), 'All text lies inside the wallpaper');
   }
 }
@@ -73,6 +71,22 @@ context.renderWallpaper(preview, state, { width: 860, height: 1864 });
 context.renderWallpaper(exportCanvas, state, { width: 2580, height: 5592 });
 assert.deepEqual(preview.text, exportCanvas.text, 'Preview and PNG must use identical text, coordinates, and colors');
 const compact = context.wallpaperLayout(state);
+assert.equal(compact.offsetX, 0);
+assert.equal(compact.offsetY, 0, 'Older saved designs retain their automatic position');
+for (const [w, h] of presets) for (const rotated of [false, true]) for (const clock of [false, true]) for (const positionX of [-100, 0, 100]) for (const positionY of [-100, 0, 100]) {
+  const positionedState = { ...state, clock, size: { width: rotated ? h : w, height: rotated ? w : h, scale: 3 }, positionX, positionY };
+  const layout = context.wallpaperLayout(positionedState);
+  assert(layout.cardLeft >= 0 && layout.cardTop >= 0, 'Extreme positions stay inside the top and left edges');
+  assert(layout.cardLeft + layout.cardWidth * layout.cardScale <= positionedState.size.width + .001, 'Right edge remains on-screen');
+  assert(layout.cardTop + layout.cardHeight * layout.cardScale <= positionedState.size.height + .001, 'Bottom edge remains on-screen');
+}
+const movedState = { ...state, positionX: 65, positionY: -60 };
+const movedLayout = context.wallpaperLayout(movedState), movedPreview = canvasRecorder(), movedExport = canvasRecorder();
+context.renderWallpaper(movedPreview, movedState, { width: 860, height: 1864 });
+context.renderWallpaper(movedExport, movedState, { width: 2580, height: 5592 });
+assert.deepEqual(movedPreview.translations[0], [movedLayout.offsetX, movedLayout.offsetY], 'Apply the position to the entire card');
+assert(movedLayout.offsetX > 0 && movedLayout.offsetY < 0, 'Move right and up as requested');
+assert.deepEqual(movedPreview.translations, movedExport.translations, 'Preview and export move by exactly the same amount');
 const full = context.wallpaperLayout({ ...state, scheduleScale: 1 });
 assert.equal(compact.cardScale, .92, 'Default timetable is slightly smaller');
 assert.equal(compact.top, full.top, 'Keep space for the lock-screen clock');
@@ -84,7 +98,7 @@ for (const scale of [.8, .92, 1]) {
   assert.equal(layout.top, compact.top);
   const recording = canvasRecorder();
   context.renderWallpaper(recording, sizedState, { width: 2580, height: 5592 });
-  assert.equal(recording.text.filter(t => t.value === 'Lecture').length, 2, 'Resizing retains class types when space allows');
+  assert(!recording.text.some(t => t.value === 'Lecture'), 'Resizing does not reintroduce class type labels');
 }
 const tabletState = { ...state, device: 'tablet', size: { width: 683, height: 512, scale: 4 } };
 const tablet = context.wallpaperLayout(tabletState);
@@ -109,10 +123,18 @@ assert(pixels[(4 * 9 + 3) * 4] < 255, 'Spread neighboring colors through the blu
 assert.equal(pixels[(4 * 9 + 4) * 4 + 3], 255, 'Keep the blurred backdrop opaque');
 context.element = () => canvasRecorder();
 const image = { width: 1600, height: 900 };
-const glassState = { ...state, cardStyle: 'glass', backgroundImage: image, themeKey: 'pink' };
+for (const cardStyle of ['glass', 'glass-clear']) {
+const glassState = { ...state, cardStyle, backgroundImage: image, themeKey: 'pink' };
 const glassPreview = canvasRecorder(), glassExport = canvasRecorder();
 context.renderWallpaper(glassPreview, glassState, { width: 860, height: 1864 });
 context.renderWallpaper(glassExport, glassState, { width: 2580, height: 5592 });
 assert.deepEqual(glassPreview.text, glassExport.text, 'Liquid glass preserves identical text in preview and export');
-assert.equal(glassExport.text.filter(t => t.value === 'Tutorial').length, 1);
-console.log('PASS: all device/orientation/clock/quality combinations, consistent one-hour course-code sizes, bounded output resolution, overlap placement, and identical preview/export drawing.');
+assert(!glassExport.text.some(t => t.value === 'Tutorial'));
+}
+const named = canvasRecorder();
+context.renderWallpaper(named, { ...state, classes: [{ ...classes[0], code: 'HIDDEN123', name: 'Data Systems', venue: 'LAB101', end: '13:00' }] }, { width: 860, height: 1864 });
+assert(named.text.map(t => t.value).join(' ').includes('Data Systems'), 'Show and wrap the subject name');
+assert(named.text.some(t => t.value === 'LAB101'), 'Keep the venue alongside the name');
+assert(!named.text.some(t => t.value === 'HIDDEN123'), 'Hide the subject code when a name is supplied');
+assert(preview.text.some(t => t.value === 'LMPU3272'), 'Use a code fallback when an imported name is missing');
+console.log('PASS: all device/orientation/clock/quality combinations, subject-name and venue display, stable short-class fonts, bounded output resolution, overlap placement, and identical preview/export drawing.');
