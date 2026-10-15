@@ -118,4 +118,67 @@ for (let i = 0; i < 100; i++) blackPixels.set(i < 40 ? [20, 20, 20, 255] : [182,
 assert.equal(context.enhanceTimetableInk(blackPixels), false);
 assert.equal(blackPixels[0], 0);
 assert.equal(blackPixels[99 * 4], 255, 'Keep olive-background preprocessing intact');
-console.log('PASS: inline syntax, multiline classes, adjacent sessions, room extraction, missing names, ambiguous codes, invalid times, text fallback, partial header geometry, nested OCR output, and both text-color modes.');
+const classList = `View My Classes
+Trimester Oct/Nov 2026
+Component LEC - Class Sect TC1L - Class Nbr 2643
+Days: Wednesday
+Times: 12:00 to 14:00
+Room: CNMX1003-CLC Lecture Theatre 3
+Component TUT - Class Sect TT4L - Class Nbr 4132
+Days: Monday
+Times: 08:00 to 10:00
+Room: CQAR3006-FCI Microsoft SE Lab
+C SE6214 SOFTWARE ENG FUNDAMENTALS
+Status Enrolled Units 4.00
+No Exams Scheduled
+Component LEC - Class Sect TC1L - Class Nbr 3803
+Days: Wednesday
+Times: 08:00 to 10:00
+Room: CQAR1009-FCI Tutorial room`;
+parsed = context.parseClassList(classList);
+assert.equal(parsed.length, 3, 'Import the three visible sessions in the supplied By Class layout');
+assert.equal(parsed[0].code, '', 'A cropped heading must not inherit the next subject code');
+assert.equal(parsed[0].name, '');
+assert.equal(parsed[0].needsReview, true);
+assert.equal(parsed[0].type, 'Lecture');
+assert.equal(parsed[0].day, 2);
+assert.equal(parsed[0].start, '12:00');
+assert.equal(parsed[0].end, '14:00');
+assert.equal(parsed[0].venue, 'CNMX1003');
+assert.equal(parsed[1].code, '');
+assert.equal(parsed[1].type, 'Tutorial');
+assert.equal(parsed[1].day, 0);
+assert.equal(parsed[2].code, 'CSE6214');
+assert.equal(parsed[2].name, 'SOFTWARE ENG FUNDAMENTALS');
+assert.equal(parsed[2].type, 'Lecture', 'A Tutorial room is not a Tutorial component');
+assert.equal(parsed[2].venue, 'CQAR1009');
+assert.equal(parsed[2].needsReview, false);
+const withHeading = `C CP6224
+OBJECT ORIENTED
+ANALYSIS AND DESIGN
+Status Enrolled
+${classList}`;
+parsed = context.parseClassList(withHeading);
+assert.equal(parsed[0].code, 'CCP6224');
+assert.equal(parsed[1].code, 'CCP6224', 'Keep the subject for both lecture and tutorial');
+// Real headings stop at Status; intervening page chrome must not become a title.
+assert.equal(parsed[0].name, 'OBJECT ORIENTED ANALYSIS AND DESIGN');
+assert.equal(parsed[2].code, 'CSE6214', 'The next subject starts a separate group');
+parsed = context.parseClassList(`TCP1101 Programming
+Component LAB - Class Sect L1
+Days:
+Monday, Wednesday
+Times:
+9:00 AM to
+11:00 AM
+Room:
+Online`);
+assert.equal(parsed.length, 2, 'Expand a session with two weekdays');
+assert.equal(parsed[0].type, 'Lab');
+assert.equal(parsed[0].start, '09:00');
+assert.equal(parsed[1].day, 2);
+assert.equal(parsed[0].venue, 'Online');
+assert.equal(context.parseClassList(classList.replaceAll('08:00 to 10:00', '18:00 to 10:00')).length, 1, 'Reject reversed time ranges');
+assert.equal(context.parseClassList(block).length, 0, 'Keep grid OCR on its existing parser');
+assert.equal(context.isClassList('Monday Tuesday Wednesday Lecture 09:00-11:00'), false);
+console.log('PASS: grid OCR, By Class sessions, cropped headings, subject grouping, component types, wrapped labels/times, multiple weekdays, invalid times, and image preprocessing.');
