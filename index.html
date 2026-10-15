@@ -266,9 +266,28 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto;margin:auto}
     for(const c of placements.events){
       const x=l.gridX+c.day*dayWidth+c.lane*dayWidth/c.lanes+2,y=l.gridY+(minutes(c.start)-start)/span*l.gridHeight+1,w=dayWidth/c.lanes-4,h=(minutes(c.end)-minutes(c.start))/span*l.gridHeight-2;
       if(w<3||h<3)continue;const colors=eventColors(c.color);ctx.save();roundedPath(ctx,x,y,w,h,2*s);ctx.clip();ctx.fillStyle=colors.fill;ctx.fillRect(x,y,w,h);ctx.fillStyle=colors.edge;ctx.fillRect(x,y,1.7*s,h);
-      const pad=Math.min(4*s,h*.12),density=Math.max(.2,Math.min(1,(h-pad*2)/(35*s))),codeSize=8.8*s*density,typeSize=7.6*s*density,venueSize=6.9*s*density,nameSize=7.2*s*density;
+      const pad=Math.min(4*s,h*.08),codeSize=8.8*s,typeSize=7.6*s,venueSize=6.9*s,nameSize=7.2*s;
       const textX=x+pad+1,textWidth=w-pad*2-1;let cursor=y+pad;const bottom=y+h-pad;ctx.fillStyle=colors.ink;
-      let fittedCode=codeSize;setFont(ctx,fittedCode,800);const measured=ctx.measureText(c.code).width;if(measured>textWidth){fittedCode=Math.max(codeSize*.7,codeSize*textWidth/measured);setFont(ctx,fittedCode,800);}ctx.fillText(ellipsis(ctx,c.code,textWidth),textX,cursor);cursor+=codeSize*1.45;
+      // Keep fonts independent of duration. Short blocks use fewer rows instead
+      // of scaling all their text down to a fraction of the normal size.
+      const available=bottom-cursor,codeHeight=codeSize*1.2,detailHeight=typeSize*1.2;
+      if(available<codeHeight+detailHeight){
+        setFont(ctx,codeSize,800);const codeWidth=ctx.measureText(c.code).width;
+        ctx.fillText(ellipsis(ctx,c.code,textWidth),textX,y+(h-codeHeight)/2);
+        const typeWidth=textWidth-codeWidth-3*s;
+        if(c.type&&typeWidth>0){setFont(ctx,typeSize,600);if(ctx.measureText(c.type).width<=typeWidth)ctx.fillText(c.type,textX+codeWidth+3*s,y+(h-detailHeight)/2);}
+        ctx.restore();continue;
+      }
+      setFont(ctx,codeSize,800);ctx.fillText(ellipsis(ctx,c.code,textWidth),textX,cursor);
+      if(available<codeSize*1.45+typeSize*1.45+venueSize*1.15){
+        cursor+=codeHeight;setFont(ctx,typeSize,600);
+        const typeWidth=c.type?Math.min(textWidth,ctx.measureText(c.type).width):0;
+        if(c.type)ctx.fillText(ellipsis(ctx,c.type,textWidth),textX,cursor);
+        const venueX=textX+typeWidth+(typeWidth?3*s:0),venueWidth=textX+textWidth-venueX;
+        if(c.venue&&venueWidth>venueSize){setFont(ctx,venueSize,600);ctx.fillText(ellipsis(ctx,c.venue,venueWidth),venueX,cursor);}
+        ctx.restore();continue;
+      }
+      cursor+=codeSize*1.45;
       // Every field gets a measured line. No CSS clipping or screenshot baseline
       // approximation can cut the Lecture/Tutorial glyphs during PNG export.
       if(c.type&&cursor+typeSize*1.2<=bottom){setFont(ctx,typeSize,600);ctx.fillText(ellipsis(ctx,c.type,textWidth),textX,cursor);cursor+=typeSize*1.45;}

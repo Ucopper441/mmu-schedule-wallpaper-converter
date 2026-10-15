@@ -52,7 +52,11 @@ for (const [w, h, scale] of presets) for (const rotated of [false, true]) for (c
     context.renderWallpaper(canvas, state, output);
     assert.equal(canvas.width, output.width);
     assert.equal(canvas.height, output.height);
-    assert.equal(canvas.text.filter(t => t.value === 'Lecture').length, 2, 'Keep both Lecture labels, including the one-hour class');
+    assert(canvas.text.some(t => t.value === 'Lecture'), 'Keep class details when there is room');
+    const shortCode = canvas.text.find(t => t.value === 'CCP6124');
+    const longCode = canvas.text.find(t => t.value === 'LMPU3272');
+    assert(shortCode && longCode, 'Keep full course codes in one-hour and longer classes');
+    assert.equal(shortCode.font, longCode.font, 'One-hour classes use the same readable code size as longer classes');
     assert.equal(canvas.text.filter(t => t.value === 'Tutorial').length, 1);
     assert(canvas.text.every(t => t.y >= 0 && t.y < size.height), 'All text lies inside the wallpaper');
   }
@@ -80,7 +84,7 @@ for (const scale of [.8, .92, 1]) {
   assert.equal(layout.top, compact.top);
   const recording = canvasRecorder();
   context.renderWallpaper(recording, sizedState, { width: 2580, height: 5592 });
-  assert.equal(recording.text.filter(t => t.value === 'Lecture').length, 2, 'Resizing retains class types');
+  assert.equal(recording.text.filter(t => t.value === 'Lecture').length, 2, 'Resizing retains class types when space allows');
 }
 const tabletState = { ...state, device: 'tablet', size: { width: 683, height: 512, scale: 4 } };
 const tablet = context.wallpaperLayout(tabletState);
@@ -111,4 +115,4 @@ context.renderWallpaper(glassPreview, glassState, { width: 860, height: 1864 });
 context.renderWallpaper(glassExport, glassState, { width: 2580, height: 5592 });
 assert.deepEqual(glassPreview.text, glassExport.text, 'Liquid glass preserves identical text in preview and export');
 assert.equal(glassExport.text.filter(t => t.value === 'Tutorial').length, 1);
-console.log('PASS: all device/orientation/clock/quality combinations, one-hour type labels, bounded output resolution, overlap placement, and identical preview/export drawing.');
+console.log('PASS: all device/orientation/clock/quality combinations, consistent one-hour course-code sizes, bounded output resolution, overlap placement, and identical preview/export drawing.');
