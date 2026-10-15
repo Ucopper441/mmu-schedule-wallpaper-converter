@@ -481,8 +481,12 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto;margin:auto}
       worker=await window.Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')progress(phaseStart+(m.progress||0)*phaseSize,phaseLabel);}});
       await worker.setParameters({preserve_interword_spaces:'1',tessedit_pageseg_mode:'11'});
       const {data}=await worker.recognize(source);
+      // Calendar headers also look like daily-list headings after OCR flattens
+      // the table. Resolve their geometry before choosing a text-only parser.
+      let layoutData=data,columns=weekdayColumns(data,source.width,source.height);
+      if(!columns.length){const header=timetableHeaderImage(source);if(header){phaseStart=30;phaseSize=5;phaseLabel='Reading weekday headings…';await worker.setParameters({tessedit_pageseg_mode:'6'});const {data:headerData}=await worker.recognize(header.canvas);const labels=ocrWords(headerData).map(w=>({text:w.text,confidence:w.confidence,bbox:{x0:w.bbox.x0,x1:w.bbox.x1,y0:w.bbox.y0+header.top,y1:w.bbox.y1+header.top}}));layoutData={words:[...ocrWords(data),...labels]};columns=weekdayColumns(layoutData,source.width,source.height);}}
       const agendaCandidates=[data.text||'',spatialDayListText(data)].map(text=>({text,classes:parseDayList(text)}));
-      if(agendaCandidates.some(c=>c.classes.length)||/^\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+[A-Za-z]+\s+\d{1,2}\b/im.test(data.text||'')){
+      if(!columns.length&&(agendaCandidates.some(c=>c.classes.length)||/^\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday)\s+[A-Za-z]+\s+\d{1,2}\b/im.test(data.text||''))){
         phaseStart=35;phaseSize=62;phaseLabel='Reading daily timetable rows…';progress(35,phaseLabel);
         await worker.setParameters({tessedit_pageseg_mode:'6'});const {data:ordered}=await worker.recognize(source);
         agendaCandidates.push(...[ordered.text||'',spatialDayListText(ordered)].map(text=>({text,classes:parseDayList(text)})));
@@ -490,7 +494,7 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto;margin:auto}
         const best=agendaCandidates[0];best.classes.forEach(c=>c.lowConfidence=true);
         if(best.classes.length){$('ocrText').value=best.text;progress(100,'Text extracted · checking daily classes…');offerImport(assignSubjectColors(best.classes));return;}
       }
-      if(isClassList(data.text||'')){
+      if(!columns.length&&isClassList(data.text||'')){
         phaseStart=35;phaseSize=62;phaseLabel='Reading subject headings and class sessions…';progress(35,phaseLabel);
         await worker.setParameters({tessedit_pageseg_mode:'6'});const {data:ordered}=await worker.recognize(source);
         const candidates=[data,ordered].map(d=>({data:d,classes:parseClassList(d.text||'')}));
@@ -498,8 +502,6 @@ dialog{max-height:calc(100dvh - 32px);overflow:auto;margin:auto}
         const best=candidates[0];best.classes.forEach(c=>{c.lowConfidence=Number.isFinite(best.data.confidence)&&best.data.confidence<85;});
         $('ocrText').value=best.data.text||'';progress(100,'Text extracted · checking class sessions…');offerImport(assignSubjectColors(best.classes));return;
       }
-      let layoutData=data,columns=weekdayColumns(data,source.width,source.height);
-      if(!columns.length){const header=timetableHeaderImage(source);if(header){phaseStart=30;phaseSize=5;phaseLabel='Reading weekday headings…';await worker.setParameters({tessedit_pageseg_mode:'6'});const {data:headerData}=await worker.recognize(header.canvas);const labels=ocrWords(headerData).map(w=>({text:w.text,confidence:w.confidence,bbox:{x0:w.bbox.x0,x1:w.bbox.x1,y0:w.bbox.y0+header.top,y1:w.bbox.y1+header.top}}));layoutData={words:[...ocrWords(data),...labels]};columns=weekdayColumns(layoutData,source.width,source.height);}}
       let found=[],readable=[];
       if(columns.length){await worker.setParameters({tessedit_pageseg_mode:'6'});
         for(let i=0;i<columns.length;i++){const col=columns[i],crop=columnImage(source,col);phaseStart=35+i/columns.length*62;phaseSize=62/columns.length;phaseLabel='Reading '+DAYS[col.day]+' classes…';progress(phaseStart,phaseLabel);if(!crop)continue;
